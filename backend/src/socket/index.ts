@@ -12,18 +12,19 @@ const roomComments = new Map<string, CommentThread[]>()
 
 export function initSocket(io: Server) {
     io.on("connection", (socket: Socket) => {
-        socket.on("join-room", ({ roomId, username, userId }: { roomId: string, username: string, userId: string }) => {
+        socket.on("join-room", ({ roomId, username, userId }) => {
             if (!rooms.has(roomId)) {
-                const newRoom: Room = {
+                rooms.set(roomId, {
                     hostUserId: userId,
                     users: new Map(),
                     code: "",
-                    language: "javascript"
-                };
-                rooms.set(roomId, newRoom)
+                    language: "javascript",
+                });
             }
+
             const room = rooms.get(roomId);
             if (!room) return;
+
             if (kickedUsers.get(roomId)?.has(userId)) {
                 socket.emit("join-denied", {
                     reason: "You were kicked from this room",
@@ -31,17 +32,15 @@ export function initSocket(io: Server) {
                 return;
             }
 
+            // Reconnect
             if (room.users.has(userId)) {
-
                 const timer = disconnectTimers.get(userId);
                 if (timer) {
                     clearTimeout(timer);
                     disconnectTimers.delete(userId);
                 }
 
-                const user = room.users.get(userId)!;
-                user.socketId = socket.id;
-
+                room.users.get(userId)!.socketId = socket.id;
                 socket.join(roomId);
 
                 socket.emit("room-joined", {
@@ -52,41 +51,39 @@ export function initSocket(io: Server) {
                     hostUserId: room.hostUserId,
                 });
 
+                socket.emit("comment:init", {
+                    comments: roomComments.get(roomId) ?? [],
+                })
                 return;
             }
 
-
-            const user: User = {
+            room.users.set(userId, {
                 userId,
-                socketId: socket.id,
                 username,
-            };
+                socketId: socket.id,
+            });
 
-
-            room.users.set(userId, user);
-            socket.join(roomId)
+            socket.join(roomId);
 
             socket.emit("room-joined", {
                 roomId,
                 code: room.code,
                 language: room.language,
                 users: Array.from(room.users.values()),
-                usersCount: room.users.size,
-                hostId: room.hostUserId,
+                hostUserId: room.hostUserId,
             });
 
-            io.to(roomId).emit("user-joined", {
-                socketId: socket.id,
-                username
-            })
-
-            console.log(`Socket ${socket.id} joined room ${roomId}`)
+            socket.to(roomId).emit("user-joined", {
+                userId,
+                username,
+            });
 
             socket.emit("comment:init", {
                 comments: roomComments.get(roomId) ?? [],
-            })
+            });
 
-        })
+            console.log(`Socket ${socket.id} joined room ${roomId}`);
+        });
 
         socket.on("code-change", ({ roomId, code }: { roomId: string, code: string }) => {
             const room = rooms.get(roomId);
@@ -99,15 +96,15 @@ export function initSocket(io: Server) {
             });
         })
 
-        socket.on("language-change", ({ roomId, language }: { roomId: string, language: string }) => {
+        socket.on("language-change", ({ roomId, language, userId }: { roomId: string, language: string, userId: string }) => {
             const room = rooms.get(roomId);
             if (!room) return;
-            if (socket.id !== room.hostUserId) {
+            if (room.hostUserId !== userId) {
                 return;
             }
             room.language = language;
 
-            io.to(roomId).emit("language-update", {
+            socket.to(roomId).emit("language-update", {
                 language
             });
         })
@@ -135,13 +132,11 @@ export function initSocket(io: Server) {
                 io.to(roomId).emit("execution-result", {
                     output: result.output,
                     error: result.error,
-                    language,
                 });
             } catch (error) {
                 io.to(roomId).emit("execution-result", {
                     output: "",
                     error: "Execution failed",
-                    language,
                 });
             }
 
@@ -192,23 +187,25 @@ export function initSocket(io: Server) {
             }
             if (targetUserId == userId) return;
             const kickedSocketId = kickedUser.socketId;
+
+
             if (!kickedUsers.has(roomId)) {
                 kickedUsers.set(roomId, new Set());
             }
             kickedUsers.get(roomId)!.add(targetUserId);
 
-            room.users.delete(targetUserId);
-
             io.sockets.sockets
-                .get(kickedUser.socketId)
+                .get(kickedSocketId)
                 ?.leave(roomId);
 
-            io.to(roomId).emit("user-left", { userId: targetUserId });
-
-            io.to(kickedUser.socketId).emit("kicked", {
+            io.to(kickedSocketId).emit("kicked", {
                 roomId,
                 reason: "You were removed by the host",
             });
+
+            room.users.delete(targetUserId);
+
+            io.to(roomId).emit("user-left", { userId: targetUserId });
 
         })
 
@@ -246,37 +243,80 @@ export function initSocket(io: Server) {
             }
         );
 
-        socket.on("comment:add", ({ roomId, comment }: { roomId: string; comment: CommentThread }) => {
-            
-            if (!comment || !comment.id || !comment.lineNumber) return;
-            if (!roomComments.has(roomId)) {
-                roomComments.set(roomId, []);
+        socket.on("comment:add",
+            ({ roomId, lineNumber, message, authorId, authorName }) => {
+                const thread: CommentThread = {
+                    id: crypto.randomUUID(),
+                    roomId,
+                    authorId,
+                    authorName,
+                    lineNumber,
+                    message,
+                    replies: [],
+                    createdAt: Date.now(),
+                    resolved: false,
+                };
+
+                if (!roomComments.has(roomId)) {
+                    roomComments.set(roomId, []);
+                }
+
+                roomComments.get(roomId)!.push(thread);
+
+                io.to(roomId).emit("comment:added", thread);
             }
+        );
 
 
-            roomComments.get(roomId)!.push(comment);
+        socket.on("comment:reply",
+            ({ roomId, commentId, message, authorId, authorName }) => {
+                const threads = roomComments.get(roomId);
+                if (!threads) return;
 
-            io.to(roomId).emit("comment:added", comment)
-        })
+                const thread = threads.find(t => t.id === commentId);
+                if (!thread) return;
 
-        socket.on("comment:reply", ({
-            roomId,
-            commentId,
-            reply }: {
-                roomId: string;
-                commentId: string;
-                reply: Reply;
-            }) => {
-            const comments = roomComments.get(roomId);
-            if (!comments) return;
+                const reply: Reply = {
+                    id: crypto.randomUUID(),
+                    authorId,
+                    authorName,
+                    message,
+                    createdAt: Date.now(),
+                };
 
-            const thread = comments.find((c) => c.id === commentId);
+                thread.replies.push(reply);
+
+                io.to(roomId).emit("comment:replied", {
+                    commentId,
+                    reply,
+                });
+            }
+        );
+
+        socket.on("comment:resolve", ({ roomId, commentId }) => {
+            const threads = roomComments.get(roomId);
+            if (!threads) return;
+
+            const thread = threads.find(t => t.id === commentId);
             if (!thread) return;
 
-            thread.replies.push(reply);
-            io.to(roomId).emit("comment:updated", thread);
+            thread.resolved = true;
 
-        })
+            io.to(roomId).emit("comment:resolved", { commentId });
+        });
+
+        socket.on("comment:unresolve", ({ roomId, commentId }) => {
+            const threads = roomComments.get(roomId);
+            if (!threads) return;
+
+            const thread = threads.find(t => t.id === commentId);
+            if (!thread) return;
+
+            thread.resolved = false;
+
+            io.to(roomId).emit("comment:unresolved", { commentId });
+        });
+
 
         socket.on("disconnect", () => {
             for (const [roomId, room] of rooms.entries()) {

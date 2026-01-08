@@ -1,20 +1,25 @@
-import type { CommentThread } from "../types/comment"
+import type { CommentThread } from "../types/comment";
 import React from "react"
 
-type props={
-    comments:CommentThread[];
-    onJumpToLine:(lineNumber:number)=>void;
-    onAddComment:()=>void;
-    onReply:(comment:string,message:string)=>void;
+type props = {
+  comments: CommentThread[];
+  onJumpToLine: (lineNumber: number) => void;
+  onAddComment: () => void;
+  onReply: (comment: string, message: string) => void;
+  resolveComment: (id: string) => void;
+  unresolveComment: (id: string) => void;
+
 }
 
 export default function CommentPanel({
-    comments,
-    onJumpToLine,
-    onAddComment,
-    onReply,
-}:props){
-     return (
+  comments,
+  onJumpToLine,
+  onAddComment,
+  onReply,
+  resolveComment,
+  unresolveComment,
+}: props) {
+  return (
     <aside className="w-full h-full border-l border-gray-700 bg-gray-900 p-4 overflow-y-auto">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold">💬 Comments</h3>
@@ -36,14 +41,30 @@ export default function CommentPanel({
         {comments.filter((thread): thread is NonNullable<typeof thread> => thread !== null).map((thread) => (
           <div
             key={thread.id}
-            className="bg-gray-800 p-3 rounded border border-gray-700"
+            className={`p-3 rounded border transition
+      ${thread.resolved
+        ? "bg-gray-800 opacity-60"
+        : "bg-gray-900 border-gray-700"}
+    `}
           >
+            <div className="flex justify-between">
             <button
               onClick={() => onJumpToLine(thread.lineNumber)}
               className="text-xs text-blue-400 hover:underline"
             >
               Line {thread.lineNumber}
             </button>
+             <button
+        onClick={() =>
+          thread.resolved
+            ? unresolveComment(thread.id)
+            : resolveComment(thread.id)
+        }
+        className="text-xs text-blue-400 hover:underline"
+      >
+        {thread.resolved ? "Reopen" : "Resolve"}
+      </button>
+      </div>
 
             <p className="text-sm font-semibold mt-1">
               {thread.authorName}
@@ -67,9 +88,9 @@ export default function CommentPanel({
             </div>
 
             {/* Reply input */}
-            <ReplyBox
+            {!thread.resolved &&<ReplyBox
               onSubmit={(msg) => onReply(thread.id, msg)}
-            />
+            />}
           </div>
         ))}
       </div>
@@ -77,9 +98,9 @@ export default function CommentPanel({
   );
 }
 
-function ReplyBox({onSubmit}:{onSubmit:(msg:string)=>void}){
-    const [value,setValue]=React.useState("");
-    
+function ReplyBox({ onSubmit }: { onSubmit: (msg: string) => void }) {
+  const [value, setValue] = React.useState("");
+
   return (
     <div className="mt-2 flex gap-1">
       <input

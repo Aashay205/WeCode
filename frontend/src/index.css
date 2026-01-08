@@ -1,7 +1,7 @@
 @import "tailwindcss";
 .remote-cursor {
-  border-left: 2px solid var(--cursor-color, #fff);
-  margin-left: -1px;
+   border-left-width: 2px;
+  border-left-style: solid;
 }
 
 
@@ -34,14 +34,14 @@
   opacity: 0.4;
 } 
 .comment-glyph {
-  background-image: url("./assets/icons8-comment.svg");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 14px;
+  background: transparent;
   cursor: pointer;
 }
 
-.comment-glyph:hover {
-  filter: brightness(1.4);
+.comment-glyph::before {
+  content: "💬";
+  font-size: 14px;
+  line-height: 16px;
+  display: block;
+  text-align: center;
 }
-

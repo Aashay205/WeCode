@@ -15,4 +15,5 @@ export type CommentThread = {
   message: string;
   replies: Reply[];
   createdAt: number;
+  resolved:boolean;
 };
