@@ -1,10 +1,10 @@
-# 💻 WeCode – Real-Time Collaborative Code Editor
+# WeCode - Real-Time Collaborative Code Editor
 
-WeCode is a full-stack collaborative code editor that enables multiple users to write, edit, and execute code together in real time. Built using React, Node.js, Socket.IO, Monaco Editor, and MongoDB, it provides an interactive coding environment with live collaboration, room management, comments, and host controls.
+WeCode is a full-stack collaborative code editor where multiple users can write, edit, and execute code together in real time. It combines a React frontend with a Node.js API, Socket.IO collaboration, Monaco Editor, Prisma, and PostgreSQL.
 
 ---
 
-## 🚀 Features
+## Features
 
 ### 👥 Real-Time Collaboration
 - Live multi-user code editing
@@ -52,7 +52,7 @@ WeCode is a full-stack collaborative code editor that enables multiple users to 
 - Clean modern interface
 
 ---
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Frontend
 - React.js
@@ -74,9 +74,9 @@ WeCode is a full-stack collaborative code editor that enables multiple users to 
 ### Authentication
 - JWT (JSON Web Token)
 
-### Tools & APIs
+### Tools and APIs
 - Monaco Editor
-- JDoodle API (for code execution)
+- JDoodle API for code execution
 
 ## 📂 Project Structure
 
@@ -124,7 +124,7 @@ WeCode/
 ```
 
 
-# 🔄 Workflow
+# Workflow
 
 1. User registers or logs in.
 2. Creates or joins a coding room.
@@ -137,7 +137,7 @@ WeCode/
 
 ---
 
-# 📸 Screenshots
+# Screenshots
 
 > Add screenshots here.
 
@@ -151,9 +151,9 @@ WeCode/
 
 ---
 
-# ⚙️ Installation
+# Getting Started
 
-## Clone Repository
+### Clone the repository
 
 ```bash
 git clone https://github.com/Aashay205/WeCode.git
@@ -165,62 +165,86 @@ cd WeCode
 
 ---
 
-## Backend
+### Prerequisites
 
-```bash
-cd Backend
+- Node.js 20 or later
+- Docker Desktop, for the recommended setup
+- JDoodle credentials, for code execution
+
+### Recommended: Docker Compose
+
+From the repository root:
+
+```powershell
+# Create backend\.env using the environment variables documented below.
+docker compose up --build
+```
+
+Open `http://localhost` for the frontend. The backend is available at `http://localhost:3000` and PostgreSQL is exposed on port `5432`.
+
+Stop the stack with:
+
+```powershell
+docker compose down
+```
+
+See [DOCKER_EXPLAIN.md](DOCKER_EXPLAIN.md) for service details and troubleshooting.
+
+### Run locally
+
+Start PostgreSQL first, then install dependencies in each application:
+
+```powershell
+cd backend
+npm install
+cd ..\frontend
 npm install
 ```
 
-Create a `.env` file
+Create `backend\.env` with values for your local database and services:
 
 ```env
-PORT=5000
-
-MONGO_URI=your_mongodb_connection_string
-
-JWT_SECRET=your_secret_key
-
-CLIENT_URL=http://localhost:5173
-
-JDOODLE_CLIENT_ID=your_client_id
-
-JDOODLE_CLIENT_SECRET=your_client_secret
+DATABASE_URL=postgresql://wecode:pass@localhost:5432/wecode
+JWT_SECRET=replace-with-a-long-random-secret
+CORS_ORIGIN=http://localhost:5173
+JDOODLE_CLIENT_ID=your-client-id
+JDOODLE_CLIENT_SECRET=your-client-secret
 ```
 
-Start Backend
+Run the backend and frontend in separate terminals:
 
-```bash
-npm start
-```
-
----
-
-## Frontend
-
-```bash
-cd Frontend
-
-npm install
-```
-
-Start Frontend
-
-```bash
+```powershell
+cd backend
 npm run dev
 ```
 
----
+```powershell
+cd frontend
+npm run dev
+```
 
-# 🔑 Environment Variables
+The local frontend runs at `http://localhost:5173`.
+
+### Database migrations
+
+Prisma migrations are stored in `backend/prisma/migrations`. For a local development database, apply existing migrations with:
+
+```powershell
+cd backend
+npx prisma migrate deploy
+```
+
+## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| PORT | Backend Port |
-| JWT_SECRET | JWT Secret |
-| CLIENT_URL | Frontend URL |
-| JDOODLE_CLIENT_ID | JDoodle Client ID |
-| JDOODLE_CLIENT_SECRET | JDoodle Secret |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Secret used to sign authentication tokens |
+| `CORS_ORIGIN` | Allowed frontend origin(s) |
+| `JDOODLE_CLIENT_ID` | JDoodle client ID for code execution |
+| `JDOODLE_CLIENT_SECRET` | JDoodle client secret for code execution |
+
+The Compose file supplies the container database URL and exposes the backend on port `3000`.
 
 ---
 
