@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: wecode
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: wecode
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql://wecode:pass@db:5432/wecode
+      - CORS_ORIGIN=http://localhost,http://localhost:5173
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+
+volumes:
+  db_data:

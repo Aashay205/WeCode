@@ -1,12 +1,26 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import type { editor } from "monaco-editor";
 import socket from "../socket/socket";
 // import { getColorForUser } from "../utils/colors";
 
 type Params = {
   roomId: string;
-  userId: string;
   getUsernameById:(id:string)=>string;
-  editorRef: React.MutableRefObject<any>;
+  editorRef: React.MutableRefObject<editor.IStandaloneCodeEditor | null>;
+};
+
+type CursorUpdate = {
+  userId: string;
+  position?: {
+    lineNumber: number;
+    column: number;
+  };
+  selection?: {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  };
 };
 
 const COLORS = [
@@ -30,15 +44,15 @@ const getColorForUser = (userId: string) => {
 
 export function useCursors({
   roomId,
-  userId,
   getUsernameById,
   editorRef,
 }: Params) {
+  const userId = localStorage.getItem("userId") ?? "";
   const cursorDecorations = useRef<Map<string, string[]>>(new Map());
   const selectionDecorations = useRef<Map<string, string[]>>(new Map());
   const throttleRef = useRef<number | null>(null);
 
-  const clearRemoteUser = (remoteUserId: string) => {
+  const clearRemoteUser = useCallback((remoteUserId: string) => {
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -53,14 +67,14 @@ export function useCursors({
       editor.deltaDecorations(selection, []);
       selectionDecorations.current.delete(remoteUserId);
     }
-  };
+  }, [editorRef]);
 
   const getCursorClass = (userId: string) =>
     `remote-cursor-${userId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
 
   useEffect(() => {
-    const handleCursorUpdate = (data: any) => {
+    const handleCursorUpdate = (data: CursorUpdate) => {
       if (!editorRef.current) return;
       if (data.userId === userId) return;
 
@@ -166,14 +180,14 @@ export function useCursors({
       socket.off("cursor-update", handleCursorUpdate);
       socket.off("user-left", handleUserLeft);
     };
-  }, []);
+  }, [clearRemoteUser, editorRef, getUsernameById, userId]);
 
   const bindEditorEvents = () => {
     if (!editorRef.current) return;
 
     const editor = editorRef.current;
 
-    const cursorDisposable = editor.onDidChangeCursorPosition((e: any) => {
+    const cursorDisposable = editor.onDidChangeCursorPosition((e: editor.ICursorPositionChangedEvent) => {
       if (throttleRef.current) return;
 
       throttleRef.current = window.setTimeout(() => {
@@ -182,7 +196,6 @@ export function useCursors({
 
       socket.emit("cursor-update", {
         roomId,
-        userId,
         position: {
           lineNumber: e.position.lineNumber,
           column: e.position.column,
@@ -190,10 +203,9 @@ export function useCursors({
       });
     });
 
-    const selectionDisposable = editor.onDidChangeCursorSelection((e: any) => {
+    const selectionDisposable = editor.onDidChangeCursorSelection((e: editor.ICursorSelectionChangedEvent) => {
       socket.emit("cursor-update", {
         roomId,
-        userId,
         selection: {
           startLineNumber: e.selection.startLineNumber,
           startColumn: e.selection.startColumn,

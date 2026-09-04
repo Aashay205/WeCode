@@ -1,8 +1,7 @@
 import socket from "../socket/socket";
-import { useEffect, useState, useRef } from "react";
-import { debounce } from "../utils/debounce";
+import { useEffect, useState } from "react";
 
-export default function useEditorSync({ roomId, userId, isHost }: { roomId: string, userId: string, isHost: boolean }) {
+export default function useEditorSync({ roomId, isHost }: { roomId: string, isHost: boolean }) {
     const [code, setCode] = useState("");
     const [language, setLanguage] = useState("javascript");
     const [isRunning, setIsRunning] = useState(false)
@@ -12,6 +11,17 @@ export default function useEditorSync({ roomId, userId, isHost }: { roomId: stri
     // );
 
     useEffect(() => {
+        const handleRoomJoined = ({
+            code,
+            language,
+        }: {
+            code: string;
+            language: string;
+        }) => {
+            setCode(code || "");
+            setLanguage(language);
+        };
+
         const handleCodeUpdate = ({
             code
         }: { code: string }) => {
@@ -34,12 +44,13 @@ export default function useEditorSync({ roomId, userId, isHost }: { roomId: stri
             setIsRunning(false);
             setOutput(error || output || "")
         }
-
+        socket.on("room-joined",handleRoomJoined)
         socket.on("code-update", handleCodeUpdate);
         socket.on("language-update", handleLanguageUpdate);
         socket.on("execution-result", handleExecutionResult)
 
         return () => {
+            socket.off("room-joined",handleRoomJoined)
             socket.off("code-update", handleCodeUpdate);
             socket.off("language-update", handleLanguageUpdate);
             socket.off("execution-result", handleExecutionResult)
@@ -74,7 +85,6 @@ export default function useEditorSync({ roomId, userId, isHost }: { roomId: stri
         socket.emit("language-change", {
             roomId,
             language,
-            userId,
         })
     }
 
@@ -86,13 +96,12 @@ export default function useEditorSync({ roomId, userId, isHost }: { roomId: stri
 
         socket.emit("run-code", {
             roomId,
-            code, language, input, userId,
+            code, language, input,
         })
     }
 
     return {
         code,
-        setCode,
         language,
         onCodeChange,
         onLanguageChange,

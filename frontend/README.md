@@ -17,57 +17,80 @@ If you are developing a production application, we recommend updating the config
 
 ```js
 export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+  # weCode
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+  weCode is a browser-based collaborative coding room. Multiple users can join the same room, edit code together, discuss specific lines, and run code from a shared workspace.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+  ## Features
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+  - Real-time code and language synchronization with Socket.IO
+  - Monaco Editor integration with remote cursor and selection indicators
+  - Room presence, reconnect handling, host transfer, and user removal
+  - Line-linked comment threads with replies, resolve, and delete actions
+  - Email/password authentication with signed JWT sessions
+  - Host-only code execution through the JDoodle API
+  - PostgreSQL persistence for rooms and comment threads with Prisma
+  - Docker Compose setup for the frontend, backend, and database
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+  ## Stack
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+  - Frontend: React 19, TypeScript, Vite, React Router, Monaco Editor
+  - Backend: Node.js, TypeScript, Express, Socket.IO
+  - Data: PostgreSQL and Prisma
+  - Deployment: Docker, Docker Compose, nginx
+
+  ## Run With Docker
+
+  From the repository root:
+
+  ```powershell
+  Copy-Item backend\.env.example backend\.env
+  # Add your JDoodle credentials to backend\.env if code execution is needed.
+  docker compose up --build
+  ```
+
+  Open `http://localhost` in a browser. The backend listens on `http://localhost:3000`.
+
+  Stop the stack with:
+
+  ```powershell
+  docker compose down
+  ```
+
+  See [DOCKER_EXPLAIN.md](../DOCKER_EXPLAIN.md) for the service layout and troubleshooting notes.
+
+  ## Run Locally
+
+  Start PostgreSQL, then configure `backend/.env` using [backend/.env.example](../backend/.env.example). Install and run each package in a separate terminal:
+
+  ```powershell
+  cd backend
+  npm install
+  npx prisma migrate deploy
+  npm run dev
+  ```
+
+  ```powershell
+  cd frontend
+  npm install
+  npm run dev
+  ```
+
+  ## Verification
+
+  ```powershell
+  cd frontend
+  npm run lint
+  npm run build
+
+  cd ..\backend
+  npm run build
+  ```
+
+  ## Architecture
+
+  The browser connects to the backend through Socket.IO. Room membership and transient presence are held in memory by the backend, while room code, language, and comment data are persisted in PostgreSQL through Prisma. The frontend uses focused hooks for room state, editor synchronization, cursor decorations, and comments.
+
+  ## Current Scope
+
+  This is a portfolio and learning project. It uses email/password authentication with signed JWT sessions, and the frontend Socket.IO URL is configured for local development at `http://localhost:3000`. Production deployment would still require configurable service URLs and a shared presence store for multiple backend instances.

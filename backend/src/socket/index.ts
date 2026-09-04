@@ -2,28 +2,43 @@ import { Server, Socket } from "socket.io";
 import type Room from "../types/room.js";
 import type User from "../types/user.js";
 import { executeCode } from "../services/codeExecution.js";
-import type { CommentThread } from "../types/comments.js";
-import type { Reply } from "../types/comments.js";
+
+
+import { prisma } from "../lib/prisma.js"
+import type { AuthUser } from "../types/auth.js";
 
 const disconnectTimers = new Map<string, NodeJS.Timeout>();
 const kickedUsers = new Map<string, Set<string>>();
-const rooms = new Map<string, Room>();
-const roomComments = new Map<string, CommentThread[]>()
+const roomUsers = new Map<string, Map<string, User>>();
+
 
 export function initSocket(io: Server) {
     io.on("connection", (socket: Socket) => {
-        socket.on("join-room", ({ roomId, username, userId }) => {
-            if (!rooms.has(roomId)) {
-                rooms.set(roomId, {
-                    hostUserId: userId,
-                    users: new Map(),
-                    code: "",
-                    language: "javascript",
-                });
-            }
+        socket.on("join-room", async ({ roomId }: { roomId: string }) => {
+            const { userId, username } = socket.data.user as AuthUser;
 
-            const room = rooms.get(roomId);
-            if (!room) return;
+            let room = await prisma.room.findUnique({ where: { id: roomId } });
+            if (!room) {
+                try {
+                    room = await prisma.room.create({
+                        data: {
+                            id: roomId,
+                            hostUserId: userId,
+                            language: "javascript",
+                            code: "",
+                        },
+                    });
+                } catch (err: any) {
+                    if (err?.code === 'P2002') {
+                        room = await prisma.room.findUnique({ where: { id: roomId } });
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+            if (!room) {
+                return;
+            }
 
             if (kickedUsers.get(roomId)?.has(userId)) {
                 socket.emit("join-denied", {
@@ -32,32 +47,33 @@ export function initSocket(io: Server) {
                 return;
             }
 
+            let users = roomUsers.get(roomId)
+
+            if (!users) {
+                users = new Map();
+                roomUsers.set(roomId, users)
+            }
             // Reconnect
-            if (room.users.has(userId)) {
+            if (users.has(userId)) {
                 const timer = disconnectTimers.get(userId);
                 if (timer) {
                     clearTimeout(timer);
                     disconnectTimers.delete(userId);
                 }
 
-                room.users.get(userId)!.socketId = socket.id;
+                users.get(userId)!.socketId = socket.id;
                 socket.join(roomId);
 
                 socket.emit("room-joined", {
                     roomId,
                     code: room.code,
                     language: room.language,
-                    users: Array.from(room.users.values()),
+                    users: Array.from(users.values()),
                     hostUserId: room.hostUserId,
                 });
-
-                socket.emit("comment:init", {
-                    comments: roomComments.get(roomId) ?? [],
-                })
-                return;
             }
 
-            room.users.set(userId, {
+            users.set(userId, {
                 userId,
                 username,
                 socketId: socket.id,
@@ -69,7 +85,7 @@ export function initSocket(io: Server) {
                 roomId,
                 code: room.code,
                 language: room.language,
-                users: Array.from(room.users.values()),
+                users: Array.from(users.values()),
                 hostUserId: room.hostUserId,
             });
 
@@ -78,55 +94,64 @@ export function initSocket(io: Server) {
                 username,
             });
 
+
+            const comments = await prisma.commentThread.findMany({
+                where: { roomId },
+                include: { replies: true },
+                orderBy: { createdAt: "asc" },
+            });
             socket.emit("comment:init", {
-                comments: roomComments.get(roomId) ?? [],
+                comments
             });
 
             console.log(`Socket ${socket.id} joined room ${roomId}`);
         });
 
-        socket.on("code-change", ({ roomId, code }: { roomId: string, code: string }) => {
-            const room = rooms.get(roomId);
-            if (!room) return;
+        socket.on("code-change", async ({ roomId, code }: { roomId: string, code: string }) => {
+            if (!roomUsers.has(roomId)) return;
+            socket.to(roomId).emit("code-update", { code });
 
-            room.code = code;
-
-            socket.to(roomId).emit("code-update", {
-                code
-            });
         })
 
-        socket.on("language-change", ({ roomId, language, userId }: { roomId: string, language: string, userId: string }) => {
-            const room = rooms.get(roomId);
+        socket.on("language-change", async ({ roomId, language }: { roomId: string, language: string }) => {
+            const { userId } = socket.data.user as AuthUser;
+            const room = await prisma.room.findUnique({ where: { id: roomId } })
             if (!room) return;
             if (room.hostUserId !== userId) {
                 return;
             }
-            room.language = language;
-
+            await prisma.room.update({
+                where: { id: roomId },
+                data: { language }
+            })
             socket.to(roomId).emit("language-update", {
                 language
             });
         })
 
         socket.on("run-code", async ({
-            roomId, userId, code, language, input
+            roomId, code, language, input
         }: {
             roomId: string,
-            userId: string,
             code: string,
             language: string,
             input: string
         }) => {
-            const room = rooms.get(roomId);
+            const { userId } = socket.data.user as AuthUser;
+            const room = await prisma.room.findUnique({ where: { id: roomId } });
             if (!room) return;
             if (room.hostUserId !== userId) {
                 return;
             }
             try {
-                room.code = code;
-                room.language = language;
-
+                await prisma.room.update({
+                    where: {
+                        id: roomId
+                    },
+                    data: {
+                        code
+                    }
+                })
                 const result = await executeCode(code, language, input);
 
                 io.to(roomId).emit("execution-result", {
@@ -142,149 +167,135 @@ export function initSocket(io: Server) {
 
         })
 
-        socket.on("cursor-update", ({ roomId, userId, position, username, selection }) => {
-            if (!rooms.has(roomId)) return;
+        socket.on("cursor-update", ({ roomId, position, selection }) => {
+            const { userId, username } = socket.data.user as AuthUser;
+            if (!roomUsers.has(roomId)) return;
             socket.to(roomId).emit("cursor-update", {
                 userId,
                 username,
                 position,
                 selection,
+            });
+        });
 
-            })
-        }
-        )
+        socket.on("transfer-host", async ({ roomId, newHostId }: { roomId: string; newHostId: string }) => {
+            const { userId } = socket.data.user as AuthUser;
 
-        socket.on("transfer-host", ({ roomId, newHostId, userId }: { roomId: string; newHostId: string; userId: string }) => {
-
-            const room = rooms.get(roomId);
+            const room = await prisma.room.findUnique({ where: { id: roomId } });
             if (!room) return;
 
             if (room.hostUserId !== userId) {
                 return;
             }
 
-            if (!room.users.has(newHostId)) {
-                return;
-            }
-
-            room.hostUserId = newHostId;
+            await prisma.room.update({
+                where: {
+                    id: roomId
+                },
+                data: {
+                    hostUserId: newHostId
+                }
+            })
 
             io.to(roomId).emit("host-changed", {
-                hostUserId: room.hostUserId,
+                hostUserId: newHostId,
             })
         })
 
-        socket.on("kick-user", ({ roomId, targetUserId, userId }: { roomId: string; targetUserId: string; userId: string }) => {
-            const room = rooms.get(roomId);
+        socket.on("kick-user", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+            const { userId } = socket.data.user as AuthUser;
+            const room = await prisma.room.findUnique({ where: { id: roomId } });
             if (!room) return;
 
             if (room.hostUserId !== userId) {
                 return;
             }
-            const kickedUser = room.users.get(targetUserId);
-            if (!kickedUser) {
-                return
-            }
-            if (targetUserId == userId) return;
+
+            const users = roomUsers.get(roomId);
+            if (!users) return;
+
+            const kickedUser = users.get(targetUserId);
+            if (!kickedUser) return;
+            if (targetUserId === userId) return;
+
             const kickedSocketId = kickedUser.socketId;
 
-
-            if (!kickedUsers.has(roomId)) {
-                kickedUsers.set(roomId, new Set());
-            }
+            if (!kickedUsers.has(roomId)) kickedUsers.set(roomId, new Set());
             kickedUsers.get(roomId)!.add(targetUserId);
 
-            io.sockets.sockets
-                .get(kickedSocketId)
-                ?.leave(roomId);
-
-            io.to(kickedSocketId).emit("kicked", {
+            io.sockets.sockets.get(kickedSocketId)?.leave(roomId);
+            io.sockets.sockets.get(kickedSocketId)?.emit("kicked", {
                 roomId,
                 reason: "You were removed by the host",
             });
 
-            room.users.delete(targetUserId);
+            users.delete(targetUserId);
 
             io.to(roomId).emit("user-left", { userId: targetUserId });
-
         })
 
-        socket.on("leave-room",
-            ({ roomId, userId }: { roomId: string; userId: string }) => {
-                const room = rooms.get(roomId);
-                if (!room) return;
+        socket.on("leave-room", async ({ roomId }: { roomId: string }) => {
+            const { userId } = socket.data.user as AuthUser;
+            const users = roomUsers.get(roomId);
+            if (!users) return;
 
-                if (!room.users.has(userId)) return;
+            if (!users.has(userId)) return;
 
+            users.delete(userId);
+            socket.leave(roomId);
 
-                room.users.delete(userId);
-                socket.leave(roomId);
+            socket.to(roomId).emit("user-left", { userId });
 
+            const dbRoom = await prisma.room.findUnique({ where: { id: roomId } });
+            if (dbRoom?.hostUserId === userId) {
+                const next = users.values().next().value;
+                const newHost = next?.userId!;
+                await prisma.room.update({ where: { id: roomId }, data: { hostUserId: newHost } });
 
-                socket.to(roomId).emit("user-left", { userId });
-
-
-                if (room.hostUserId === userId) {
-                    const next = room.users.values().next().value;
-                    room.hostUserId = next?.userId ?? null;
-
-                    socket.to(roomId).emit("host-changed", {
-                        hostUserId: room.hostUserId,
-                    });
-                }
-
-                // Delete room if empty
-                if (room.users.size === 0) {
-                    rooms.delete(roomId);
-                    console.log("Room deleted:", roomId);
-                }
-
-                console.log(`User ${userId} left room ${roomId}`);
+                io.to(roomId).emit("host-changed", { hostUserId: newHost });
             }
-        );
+
+            // Delete room users map if empty
+            if (users.size === 0) {
+                roomUsers.delete(roomId);
+                console.log("Room users cleared:", roomId);
+            }
+
+            console.log(`User ${userId} left room ${roomId}`);
+        });
 
         socket.on("comment:add",
-            ({ roomId, lineNumber, message, authorId, authorName }) => {
-                const thread: CommentThread = {
-                    id: crypto.randomUUID(),
-                    roomId,
-                    authorId,
-                    authorName,
-                    lineNumber,
-                    message,
-                    replies: [],
-                    createdAt: Date.now(),
-                    resolved: false,
-                };
-
-                if (!roomComments.has(roomId)) {
-                    roomComments.set(roomId, []);
-                }
-
-                roomComments.get(roomId)!.push(thread);
-
+            async ({ roomId, lineNumber, message }: { roomId: string; lineNumber: number; message: string }) => {
+                const { userId: authorId, username: authorName } = socket.data.user as AuthUser;
+                const thread = await prisma.commentThread.create({
+                    data: {
+                        id: crypto.randomUUID(),
+                        roomId,
+                        authorId,
+                        authorName,
+                        lineNumber,
+                        message,
+                    }, include: {
+                        replies: true,
+                    },
+                })
                 io.to(roomId).emit("comment:added", thread);
             }
         );
 
 
         socket.on("comment:reply",
-            ({ roomId, commentId, message, authorId, authorName }) => {
-                const threads = roomComments.get(roomId);
-                if (!threads) return;
-
-                const thread = threads.find(t => t.id === commentId);
-                if (!thread) return;
-
-                const reply: Reply = {
-                    id: crypto.randomUUID(),
-                    authorId,
-                    authorName,
-                    message,
-                    createdAt: Date.now(),
-                };
-
-                thread.replies.push(reply);
+            async ({ roomId, commentId, message }: { roomId: string; commentId: string; message: string }) => {
+                const { userId: authorId, username: authorName } = socket.data.user as AuthUser;
+                const reply = await prisma.reply.create({
+                    data: {
+                        id: crypto.randomUUID(),
+                        threadId: commentId,
+                        authorId,
+                        authorName,
+                        message,
+                    },
+                });
 
                 io.to(roomId).emit("comment:replied", {
                     commentId,
@@ -293,53 +304,116 @@ export function initSocket(io: Server) {
             }
         );
 
-        socket.on("comment:resolve", ({ roomId, commentId }) => {
-            const threads = roomComments.get(roomId);
-            if (!threads) return;
-
-            const thread = threads.find(t => t.id === commentId);
-            if (!thread) return;
-
-            thread.resolved = true;
+        socket.on("comment:resolve", async ({ roomId, commentId }) => {
+            await prisma.commentThread.update({
+                where: { id: commentId },
+                data: { resolved: true },
+            })
 
             io.to(roomId).emit("comment:resolved", { commentId });
         });
 
-        socket.on("comment:unresolve", ({ roomId, commentId }) => {
-            const threads = roomComments.get(roomId);
-            if (!threads) return;
-
-            const thread = threads.find(t => t.id === commentId);
-            if (!thread) return;
-
-            thread.resolved = false;
+        socket.on("comment:unresolve", async ({ roomId, commentId }) => {
+            await prisma.commentThread.update({
+                where: { id: commentId },
+                data: { resolved: false },
+            })
 
             io.to(roomId).emit("comment:unresolved", { commentId });
         });
 
+        socket.on("comment:delete",
+            async ({ roomId, commentId }: { roomId: string; commentId: string }) => {
+                const { userId } = socket.data.user as AuthUser;
+                const room = await prisma.room.findUnique({
+                    where: { id: roomId },
+                });
+                if (!room) return;
+
+                const comment = await prisma.commentThread.findUnique({
+                    where: { id: commentId },
+                });
+                if (!comment) return;
+
+                // permission check
+                const canDelete =
+                    comment.authorId === userId || room.hostUserId === userId;
+
+                if (!canDelete) return;
+
+                // delete replies first (important)
+                await prisma.reply.deleteMany({
+                    where: { threadId: commentId },
+                });
+
+                await prisma.commentThread.delete({
+                    where: { id: commentId },
+                });
+
+                io.to(roomId).emit("comment:deleted", { commentId });
+            }
+        );
+
+        socket.on(
+            "room:delete",
+            async ({ roomId }: { roomId: string }) => {
+                const { userId } = socket.data.user as AuthUser;
+                const room = await prisma.room.findUnique({
+                    where: { id: roomId },
+                });
+                if (!room) return;
+
+                if (room.hostUserId !== userId) return;
+
+                await prisma.reply.deleteMany({
+                    where: {
+                        thread: { roomId },
+                    },
+                });
+
+                await prisma.commentThread.deleteMany({
+                    where: { roomId },
+                });
+
+                await prisma.room.delete({
+                    where: { id: roomId },
+                });
+
+                io.to(roomId).emit("room:deleted");
+
+                roomUsers.delete(roomId);
+                kickedUsers.delete(roomId);
+            }
+        );
+
+
 
         socket.on("disconnect", () => {
-            for (const [roomId, room] of rooms.entries()) {
-                for (const [userId, user] of room.users.entries()) {
+            for (const [roomId, users] of roomUsers.entries()) {
+                for (const [userId, user] of users.entries()) {
                     if (user.socketId === socket.id) {
                         const timer = setTimeout(() => {
-                            room.users.delete(userId);
+                            users.delete(userId);
 
                             socket.to(roomId).emit("user-left", { userId });
 
+                            (async () => {
+                                try {
+                                    const dbRoom = await prisma.room.findUnique({ where: { id: roomId } });
+                                    if (dbRoom?.hostUserId === userId) {
+                                        const next = users.values().next().value;
+                                        const newHost = next?.userId!;
+                                        await prisma.room.update({ where: { id: roomId }, data: { hostUserId: newHost } });
+                                        io.to(roomId).emit("host-changed", { hostUserId: newHost });
+                                    }
+                                } catch (err) {
+                                    console.error("disconnect host update failed", err);
+                                }
+                            })();
 
-                            if (room.hostUserId === userId) {
-                                const next = room.users.values().next().value;
-                                room.hostUserId = next?.userId ?? null;
-
-                                io.to(roomId).emit("host-changed", {
-                                    hostUserId: room.hostUserId,
-                                });
-                            }
-
-                            if (room.users.size === 0) {
-                                rooms.delete(roomId);
-                                console.log("Room deleted:", roomId);
+                            if (users.size === 0) {
+                                roomUsers.delete(roomId);
+                                console.log("Room users cleared:", roomId);
                             }
 
                             disconnectTimers.delete(userId);

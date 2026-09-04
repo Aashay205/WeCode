@@ -8,7 +8,8 @@ type props = {
   onReply: (comment: string, message: string) => void;
   resolveComment: (id: string) => void;
   unresolveComment: (id: string) => void;
-
+  deleteComment: (id: string) => void;
+  isHost: boolean;
 }
 
 export default function CommentPanel({
@@ -18,6 +19,8 @@ export default function CommentPanel({
   onReply,
   resolveComment,
   unresolveComment,
+  deleteComment,
+  isHost,
 }: props) {
   return (
     <aside className="w-full h-full border-l border-gray-700 bg-gray-900 p-4 overflow-y-auto">
@@ -42,29 +45,38 @@ export default function CommentPanel({
           <div
             key={thread.id}
             className={`p-3 rounded border transition
-      ${thread.resolved
-        ? "bg-gray-800 opacity-60"
-        : "bg-gray-900 border-gray-700"}
-    `}
-          >
+                 ${thread.resolved
+                ? "bg-gray-800 opacity-60"
+                : "bg-gray-900 border-gray-700"}
+              `}
+             >
             <div className="flex justify-between">
-            <button
-              onClick={() => onJumpToLine(thread.lineNumber)}
-              className="text-xs text-blue-400 hover:underline"
-            >
-              Line {thread.lineNumber}
-            </button>
-             <button
-        onClick={() =>
-          thread.resolved
-            ? unresolveComment(thread.id)
-            : resolveComment(thread.id)
-        }
-        className="text-xs text-blue-400 hover:underline"
-      >
-        {thread.resolved ? "Reopen" : "Resolve"}
-      </button>
-      </div>
+              <button
+                onClick={() => onJumpToLine(thread.lineNumber)}
+                className="text-xs text-blue-400 hover:underline"
+              >
+                Line {thread.lineNumber}
+              </button>
+              <button
+                onClick={() =>
+                  thread.resolved
+                    ? unresolveComment(thread.id)
+                    : resolveComment(thread.id)
+                }
+                className="text-xs text-blue-400 hover:underline"
+              >
+                {thread.resolved ? "Reopen" : "Resolve"}
+              </button>
+              {(thread.authorId === thread.id || isHost) && (
+                <button
+                  onClick={() => deleteComment(thread.id)}
+                  className="text-xs text-red-400 hover:underline"
+                >
+                  Delete
+                </button>
+              )}
+
+            </div>
 
             <p className="text-sm font-semibold mt-1">
               {thread.authorName}
@@ -88,7 +100,7 @@ export default function CommentPanel({
             </div>
 
             {/* Reply input */}
-            {!thread.resolved &&<ReplyBox
+            {!thread.resolved && <ReplyBox
               onSubmit={(msg) => onReply(thread.id, msg)}
             />}
           </div>

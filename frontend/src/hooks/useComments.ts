@@ -1,18 +1,15 @@
 import { useEffect, useState } from "react";
 import type { CommentThread } from "../types/comment";
+import type { editor } from "monaco-editor";
 import socket from "../socket/socket";
 
 
 export function useComments({
   roomId,
-  userId,
-  username,
   editorRef,
 }: {
   roomId: string;
-  userId: string;
-  username: string;
-  editorRef: React.RefObject<any>;
+  editorRef: React.RefObject<editor.IStandaloneCodeEditor | null>;
 }) {
   const [comments, setComments] = useState<CommentThread[]>([]);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -64,6 +61,13 @@ export function useComments({
       );
     });
 
+    socket.on("comment:deleted", ({ commentId }) => {
+      setComments((prev) =>
+        prev.filter((c) => c.id !== commentId)
+      );
+    });
+
+
 
     return () => {
       socket.off("comment:init");
@@ -71,6 +75,8 @@ export function useComments({
       socket.off("comment:replied");
       socket.off("comment:resolved");
       socket.off("comment:unresolved");
+      socket.off("comment:deleted");
+
 
     };
   }, []);
@@ -86,10 +92,7 @@ export function useComments({
 
   const submitComment = (message: string) => {
     if (!roomId || !commentLine) return;
-    socket.emit("comment:add", {
-      roomId, lineNumber: commentLine, message, authorId: userId,
-      aurthorNme: username,
-    });
+    socket.emit("comment:add", { roomId, lineNumber: commentLine, message });
     setIsModalOpen(false);
     setCommentLine(null);
   };
@@ -99,8 +102,6 @@ export function useComments({
       roomId,
       commentId,
       message,
-      authorId: userId,
-      authorName: username,
     });
   };
   const resolveComment = (commentId: string) => {
@@ -110,6 +111,13 @@ export function useComments({
   const unresolveComment = (commentId: string) => {
     socket.emit("comment:unresolve", { roomId, commentId });
   };
+
+  const deleteComment = (commentId: string) => {
+  socket.emit("comment:delete", {
+    roomId,
+    commentId,
+  });
+};
 
 
   return {
@@ -124,5 +132,6 @@ export function useComments({
     closeModal: () => setIsModalOpen(false),
     resolveComment,
     unresolveComment,
+    deleteComment,
   };
 }
