@@ -17,26 +17,11 @@ export function initSocket(io: Server) {
         socket.on("join-room", async ({ roomId }: { roomId: string }) => {
             const { userId, username } = socket.data.user as AuthUser;
 
-            let room = await prisma.room.findUnique({ where: { id: roomId } });
+            const room = await prisma.room.findUnique({ where: { id: roomId } });
             if (!room) {
-                try {
-                    room = await prisma.room.create({
-                        data: {
-                            id: roomId,
-                            hostUserId: userId,
-                            language: "javascript",
-                            code: "",
-                        },
-                    });
-                } catch (err: any) {
-                    if (err?.code === 'P2002') {
-                        room = await prisma.room.findUnique({ where: { id: roomId } });
-                    } else {
-                        throw err;
-                    }
-                }
-            }
-            if (!room) {
+                socket.emit("join-denied", {
+                    reason: "Room not found. Check the room ID or ask for a new invite link.",
+                });
                 return;
             }
 

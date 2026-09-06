@@ -33,6 +33,7 @@ export default function EditorPage() {
   const [kickTarget, setKickTarget] = useState<User | null>(null);
   const [hostTransferTarget, setHostTransferTarget] = useState<User | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const usersRef = useRef<Map<string, string>>(new Map());
   const [showDeleteRoomModal, setShowDeleteRoomModal] = useState<boolean>(false);
@@ -105,6 +106,18 @@ export default function EditorPage() {
       column: 1,
     });
     editorRef.current.focus();
+  };
+
+  const copyInviteLink = async () => {
+    if (!roomId || !navigator.clipboard) return;
+
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`);
+      setInviteCopied(true);
+      window.setTimeout(() => setInviteCopied(false), 2000);
+    } catch {
+      setInviteCopied(false);
+    }
   };
 
   useEffect(() => {
@@ -188,10 +201,20 @@ export default function EditorPage() {
         {/* Main Content */}
         <div className="relative flex-1 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
-            <h2 className="text-lg font-semibold">Room: {roomId}</h2>
+          <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-700">
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold">Room: {roomId}</h2>
+              <p className="text-xs text-gray-400">Share this room with your collaborators</p>
+            </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={copyInviteLink}
+                title="Copy invite link"
+                className="rounded bg-cyan-600 px-3 py-1 text-sm hover:bg-cyan-500"
+              >
+                {inviteCopied ? "Copied" : "Copy link"}
+              </button>
               <button
 
                 onClick={() => {
