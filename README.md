@@ -139,15 +139,11 @@ WeCode/
 
 # Screenshots
 
-> Add screenshots here.
-
-| Landing Page | Editor |
-|--------------|--------|
-| ![](screenshots/home.png) | ![](screenshots/editor.png) |
-
-| Comments | User Management |
-|-----------|-----------------|
-| ![](screenshots/comments.png) | ![](screenshots/users.png) |
+<img width="1920" height="1080" alt="Screenshot (75)" src="https://github.com/user-attachments/assets/d3027ae9-ae87-481a-88bd-f06d16b466ae" />
+<img width="1920" height="1080" alt="Screenshot (76)" src="https://github.com/user-attachments/assets/e35a7219-5e67-4d6b-ba8c-72ffcfb69692" />
+<img width="1920" height="1080" alt="Screenshot (77)" src="https://github.com/user-attachments/assets/514ccde7-163d-45de-9f5e-70f5ddf02462" />
+<img width="1920" height="1080" alt="Screenshot (74)" src="https://github.com/user-attachments/assets/b331fe3a-13dc-4770-bde7-3b03882b6487" />
+<img width="3840" height="1173" alt="Screenshot (73)" src="https://github.com/user-attachments/assets/28c1fa16-116a-4511-a986-243032c333d8" />
 
 ---
 
