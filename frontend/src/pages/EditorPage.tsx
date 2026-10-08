@@ -50,6 +50,9 @@ export default function EditorPage() {
     kickUser,
     transferHost,
     isPageLoading,
+    roomError,
+    hasJoinedRoom,
+    retryRoomJoin,
     deleteRoom,
   } = useRoom({
     roomId: roomId!,
@@ -129,181 +132,293 @@ export default function EditorPage() {
 
   if (isPageLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-900 text-white">
-        <div className="animate-pulse text-lg">Joining room...</div>
+      <div className="wecode-page-background flex h-screen items-center justify-center text-slate-100">
+        <div className="wecode-surface rounded-2xl border px-5 py-3 shadow-2xl shadow-slate-950/30">
+          <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-cyan-400" />
+          <span className="text-base font-medium tracking-wide text-slate-200">Joining room...</span>
+        </div>
       </div>
     );
   }
 
+  if (roomError && !hasJoinedRoom) {
+    return (
+      <div className="wecode-page-background flex h-screen items-center justify-center px-5 text-slate-100">
+        <div className="w-full max-w-md rounded-2xl border border-rose-500/25 bg-[var(--brand-bg-soft)] p-6 shadow-2xl shadow-black/30">
+          <h1 className="text-lg font-semibold">Could not join this room</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-300">{roomError}</p>
+          <div className="mt-5 flex gap-3">
+            <button
+              onClick={retryRoomJoin}
+              className="wecode-button wecode-button--primary"
+            >
+              Try again
+            </button>
+            <button
+              onClick={() => { window.location.href = "/"; }}
+              className="wecode-button wecode-button--ghost"
+            >
+              Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const writtenOutput = output?.trim();
+
   return (
     <>
-      <div className="h-screen flex bg-gray-900 text-white overflow-hidden">
-        {/* Sidebar */}
+      <div className="flex h-screen overflow-hidden bg-[var(--brand-bg)] text-slate-50">
+        <aside className="w-[280px] border-r border-slate-600/50 bg-[var(--brand-bg-soft)] backdrop-blur-xl">
+          <div className="border-b border-slate-800 px-4 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 text-sm font-bold text-cyan-300 ring-1 ring-cyan-400/30">
+                WC
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">
+                  WeCode
+                </p>
+                <h1 className="truncate text-sm font-semibold text-slate-100">
+                  Collaboration room
+                </h1>
+              </div>
+            </div>
+          </div>
 
-        <aside className="w-56 border-r border-gray-700 p-4">
-          <h3 className="font-semibold mb-3">Users</h3>
+          <div className="space-y-4 p-4">
+            <div className="wecode-surface-inset rounded-2xl border p-3 shadow-lg shadow-slate-950/15">
+              <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                <span>Room</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[9px] text-emerald-300 ring-1 ring-emerald-400/30">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Live
+                </span>
+              </div>
+              <p className="mt-3 truncate text-lg font-semibold text-slate-50">{roomId}</p>
+              <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                <span>{users.length} online</span>
+                <span>{isHost ? "Host" : "Guest"}</span>
+              </div>
+            </div>
 
-          <ul className="space-y-2">
-            {users.map((user) => (
-              <li
-                key={user.userId}
-                onClick={() => {
-                  if (!isHost) return;
-                  if (user.userId === userId) return;
-                  setSelectedUserId(prev =>
-                    prev === user.userId ? null : user.userId
-                  );
-                }}
-                className={`px-2 py-2 rounded text-sm cursor-pointer transition
-                ${selectedUserId === user.userId ? "bg-gray-700" : "bg-gray-800"}
-                ${isHost && user.userId !== userId ? "hover:bg-gray-700" : ""}
-                `}
-              >
-                <div className="flex justify-between items-center">
-                  <span>
-                    {user.username}
-                    {user.userId === hostUserId && " 👑"}
-                  </span>
-                </div>
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-sm font-medium text-slate-200">Participants</h3>
+              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+                {users.length}
+              </span>
+            </div>
 
-                {isHost &&
-                  selectedUserId === user.userId &&
-                  user.userId !== hostUserId && (
-                    <div className="flex gap-2 mt-2"
-                      onClick={(e) => { e.stopPropagation() }
-                      }>
-                      <button
-                        onClick={() => {
-                          setKickTarget(user)
-                        }}
-                        className="text-xs bg-red-600 px-2 py-1 rounded"
-                      >
-                        Kick
-                      </button>
+            <ul className="space-y-2">
+              {users.map((user) => {
+                const isCurrentUser = user.userId === userId;
+                const isSelected = selectedUserId === user.userId;
+                const isHostUser = user.userId === hostUserId;
 
-                      <button
-                        onClick={() => {
-                          setHostTransferTarget(user);
-                        }}
-                        className="text-xs bg-blue-600 px-2 py-1 rounded"
-                      >
-                        Make Host
-                      </button>
+                return (
+                  <li
+                    key={user.userId}
+                    onClick={() => {
+                      if (!isHost || isCurrentUser) return;
+                      setSelectedUserId((prev) => (prev === user.userId ? null : user.userId));
+                    }}
+                    className={`cursor-pointer rounded-2xl border p-2.5 transition-all duration-200 ${
+                      isSelected
+                        ? "border-cyan-500/50 bg-slate-800/90 shadow-md shadow-cyan-500/10"
+                        : "wecode-surface-raised wecode-surface-hover border hover:border-slate-600"
+                    } ${isHost && !isCurrentUser ? "hover:translate-x-0.5" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-xs font-semibold text-white">
+                          {user.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-slate-100">
+                            <span className="truncate">{user.username}</span>
+                            {isCurrentUser && (
+                              <span className="rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-slate-200">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                            <span className={`h-1.5 w-1.5 rounded-full ${isHostUser ? "bg-amber-400" : "bg-emerald-400"}`} />
+                            {isHostUser ? "Host" : "Collaborator"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {isHostUser && (
+                        <span className="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-300 ring-1 ring-amber-400/30">
+                          Host
+                        </span>
+                      )}
                     </div>
-                  )}
 
-              </li>
-            ))}
-          </ul>
+                    {isHost && isSelected && !isCurrentUser && !isHostUser && (
+                      <div
+                        className="mt-3 flex gap-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <button
+                          onClick={() => setKickTarget(user)}
+                          className="wecode-button wecode-button--danger wecode-button--compact"
+                        >
+                          Kick
+                        </button>
+                        <button
+                          onClick={() => setHostTransferTarget(user)}
+                          className="wecode-button wecode-button--chip wecode-button--compact"
+                        >
+                          Make host
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </aside>
 
+        <main className="relative flex min-w-0 flex-1 flex-col bg-[var(--brand-bg)]">
+          {roomError && hasJoinedRoom && (
+            <div role="status" className="border-b border-amber-500/25 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+              {roomError}
+            </div>
+          )}
+          <header className="border-b border-slate-600/50 bg-[var(--brand-bg-soft)]/95 backdrop-blur-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/10 px-2 py-1 text-cyan-300 ring-1 ring-cyan-400/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                    Active
+                  </span>
+                  <span>Session</span>
+                </div>
+                <h2 className="mt-2 truncate text-xl font-semibold text-slate-50">{roomId}</h2>
+              </div>
 
-        {/* Main Content */}
-        <div className="relative flex-1 flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-700">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-semibold">Room: {roomId}</h2>
-              <p className="text-xs text-gray-400">Share this room with your collaborators</p>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  onClick={copyInviteLink}
+                  title="Copy invite link"
+                  className="wecode-button wecode-button--chip"
+                >
+                  {inviteCopied ? "Copied" : "Copy link"}
+                </button>
+
+                <button
+                  onClick={() => setIsPanelOpen((prev) => !prev)}
+                  className="wecode-button wecode-button--ghost px-3"
+                  aria-label="Toggle comments"
+                >
+                  💬
+                </button>
+
+                <div className="wecode-button wecode-button--ghost flex items-center gap-2 px-3 pr-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                    Language
+                  </span>
+                  <select
+                    disabled={!isHost}
+                    value={language}
+                    onChange={(e) => onLanguageChange(e.target.value)}
+                    className="wecode-select text-sm font-medium disabled:cursor-not-allowed disabled:text-slate-500"
+                  >
+                    {LANGUAGES.map((lang) => (
+                      <option key={lang.value} value={lang.value} className="bg-slate-900 text-slate-50">
+                        {lang.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {isHost && (
+                  <button
+                    onClick={() => runCode(input)}
+                    disabled={isRunning || !isHost}
+                    className={`wecode-button wecode-button--primary ${isRunning ? "opacity-80 cursor-not-allowed" : ""}`}
+                  >
+                    {isRunning ? "Running..." : "Run code"}
+                  </button>
+                )}
+
+                <button
+                  onClick={leaveRoom}
+                  className="wecode-button wecode-button--danger"
+                >
+                  Leave
+                </button>
+
+                {isHost && (
+                  <button
+                    onClick={() => setShowDeleteRoomModal(true)}
+                    className="wecode-button wecode-button--danger"
+                  >
+                    Delete room
+                  </button>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex items-center justify-between border-b border-slate-600/50 bg-[var(--brand-bg-soft)]/80 px-4 py-2.5 text-xs text-slate-300">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-200">Editor</span>
+                <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
+                  {language}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span>Live sync</span>
+              </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                onClick={copyInviteLink}
-                title="Copy invite link"
-                className="rounded bg-cyan-600 px-3 py-1 text-sm hover:bg-cyan-500"
-              >
-                {inviteCopied ? "Copied" : "Copy link"}
-              </button>
-              <button
-
-                onClick={() => {
-                  console.log("TOGGLE CLICK");
-                  setIsPanelOpen((prev) => !prev)
+            <div className="min-h-0 flex-1">
+              <Editor
+                options={{
+                  glyphMargin: true,
+                  minimap: { enabled: true },
+                  fontSize: 14,
+                  padding: { top: 18, bottom: 18 },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  roundedSelection: true,
+                  smoothScrolling: true,
+                  scrollbar: {
+                    verticalScrollbarSize: 10,
+                    horizontalScrollbarSize: 10,
+                  },
                 }}
-                className="px-3 py-1 rounded bg-gray-800 hover:bg-gray-700"
-              >
-                💬
-              </button>
-
-
-              <select
-                disabled={!isHost}
-                value={language}
-                onChange={(e) => onLanguageChange(e.target.value)}
-                className="bg-gray-800 border border-gray-600 rounded px-2 py-1"
-              >
-                {LANGUAGES.map((lang) => (
-                  <option key={lang.value} value={lang.value}>
-                    {lang.label}
-                  </option>
-                ))}
-              </select>
-              {isHost && (
-                <button
-                  onClick={() => { runCode(input) }}
-                  disabled={isRunning || !isHost}
-                  className={`px-4 py-1 rounded ${isRunning
-                    ? "bg-gray-600 cursor-not-allowed"
-                    : "bg-green-600 hover:bg-green-700"
-                    }`}
-                >
-                  {isRunning ? "Running..." : "Run"}
-                </button>
-              )}
-              <button
-                onClick={leaveRoom}
-                className="px-4 py-1 rounded bg-red-600 hover:bg-red-700"
-              >
-                Leave
-              </button>
-              {isHost && (
-                <button
-                  onClick={() => setShowDeleteRoomModal(true)}
-                  className="px-3 py-1 bg-red-700 hover:bg-red-800 rounded text-sm"
-                >
-                  Delete Room
-                </button>
-              )}
-
-
-
+                height="100%"
+                language={language}
+                value={code}
+                theme="vs-dark"
+                onChange={onCodeChange}
+                onMount={(editor, monaco) => {
+                  monaco.editor.setTheme("vs-dark");
+                  editorRef.current = editor;
+                  bindEditorEvents();
+                }}
+              />
             </div>
           </div>
-
-          {/* Editor */}
-          <div className="flex-1 min-h-0">
-            <Editor
-              options={{
-                glyphMargin: true,
-                minimap: { enabled: true },
-              }}
-              height="100%"
-              language={language}
-              value={code}
-              theme="vs-dark"
-              onChange={onCodeChange}
-              onMount={(editor) => {
-                editorRef.current = editor;
-                bindEditorEvents();
-              }
-              }
-
-            />
-          </div>
-
 
           <div
-            className={`
-              absolute bottom-0 left-0 right-0
-              h-64 z-20
-              bg-gray-900 border-t border-gray-700
-              transition-all duration-300 ease-in-out
-              transform
-               ${isPanelOpen
+            className={`wecode-surface-inset absolute bottom-0 left-0 right-0 z-20 h-64 border-t border-slate-700 shadow-2xl shadow-slate-950/35 backdrop-blur-sm transition-all duration-300 ease-in-out ${
+              isPanelOpen
                 ? "translate-y-0 opacity-100 pointer-events-auto"
-                : "translate-y-full opacity-0 pointer-events-none"}
-           `}
+                : "translate-y-full opacity-0 pointer-events-none"
+            }`}
           >
             <CommentPanel
               onJumpToLine={jumpToLine}
@@ -317,29 +432,37 @@ export default function EditorPage() {
             />
           </div>
 
+          <div className="border-t border-slate-600/50 bg-[var(--brand-bg-soft)] p-4">
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="wecode-surface-raised rounded-2xl border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-slate-200">Input</h4>
+                  <span className="text-[10px] uppercase tracking-[0.15em] text-slate-400">stdin</span>
+                </div>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  className="wecode-field h-28 w-full resize-none rounded-xl border p-3 font-mono text-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-400/60"
+                  placeholder="Provide input for your program..."
+                />
+              </div>
 
-
-          {/* IO Panels */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-gray-800">
-            <div>
-              <h4 className="font-semibold mb-1">Input</h4>
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="w-full h-24 bg-gray-900 border border-gray-700 rounded p-2"
-              />
-            </div>
-
-            <div>
-              <h4 className="font-semibold mb-1">Output</h4>
-              <pre className="w-full h-24 bg-black border border-gray-700 rounded p-2 overflow-auto">
-                {output}
-              </pre>
+              <div className="wecode-surface-raised rounded-2xl border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-slate-200">Output</h4>
+                  <span className="text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                    {writtenOutput ? "Received" : "Waiting"}
+                  </span>
+                </div>
+                <pre className="wecode-surface-inset h-28 overflow-auto rounded-xl border p-3 font-mono text-sm text-slate-100 whitespace-pre-wrap">
+                  {writtenOutput || "Run your code to see the output here."}
+                </pre>
+              </div>
             </div>
           </div>
-        </div>
-
+        </main>
       </div>
+
       <ConfirmModal
         open={!!kickTarget}
         title="Kick user?"
@@ -348,7 +471,7 @@ export default function EditorPage() {
         onCancel={() => setKickTarget(null)}
         onConfirm={() => {
           if (!kickTarget) return;
-          kickUser(kickTarget.userId)
+          kickUser(kickTarget.userId);
           setKickTarget(null);
         }}
       />
@@ -360,7 +483,7 @@ export default function EditorPage() {
         onCancel={() => setHostTransferTarget(null)}
         onConfirm={() => {
           if (!hostTransferTarget) return;
-          transferHost(hostTransferTarget.userId)
+          transferHost(hostTransferTarget.userId);
           setHostTransferTarget(null);
         }}
       />
@@ -382,7 +505,6 @@ export default function EditorPage() {
         onClose={closeModal}
         onSubmit={submitComment}
       />
-
     </>
   );
 

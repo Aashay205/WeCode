@@ -17,10 +17,10 @@ export default function AddCommentModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-gray-800 rounded-lg w-96 p-4 border border-gray-700">
-        <h3 className="font-semibold mb-2">
-          Add comment {lineNumber ? `on line ${lineNumber}` : ""}
+    <div className="wecode-overlay fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[1px]">
+      <div className="wecode-enter wecode-dialog w-[560px] max-w-[calc(100vw-2rem)] rounded-[18px] border p-5 shadow-[0_0_0_1px_rgba(148,163,184,0.08),0_24px_60px_rgba(0,0,0,0.4)]">
+        <h3 className="mb-4 text-[28px] font-medium leading-tight text-slate-100">
+          Add comment on line {lineNumber ?? 1}
         </h3>
 
         <textarea
@@ -28,13 +28,13 @@ export default function AddCommentModal({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Write your comment..."
-          className="w-full h-28 bg-gray-800 border border-gray-600 rounded p-2 text-sm"
+          className="wecode-field h-[140px] w-full rounded-xl border p-3 text-base leading-6 outline-none transition placeholder:text-slate-400 focus:border-cyan-400/70"
         />
 
-        <div className="flex justify-end gap-2 mt-3">
+        <div className="mt-5 flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm bg-gray-700 rounded"
+            className="wecode-button wecode-button--ghost min-w-[100px] rounded-xl px-5"
           >
             Cancel
           </button>
@@ -45,7 +45,8 @@ export default function AddCommentModal({
               onSubmit(value.trim());
               setValue("");
             }}
-            className="px-3 py-1 text-sm bg-blue-600 rounded"
+            disabled={!value.trim()}
+            className="wecode-button wecode-button--primary min-w-[100px] rounded-xl px-5 disabled:cursor-not-allowed"
           >
             Add
           </button>

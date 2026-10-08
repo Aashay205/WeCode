@@ -14,41 +14,53 @@ const roomUsers = new Map<string, Map<string, User>>();
 
 export function initSocket(io: Server) {
     io.on("connection", (socket: Socket) => {
-        socket.on("join-room", async ({ roomId }: { roomId: string }) => {
-            const { userId, username } = socket.data.user as AuthUser;
-
-            const room = await prisma.room.findUnique({ where: { id: roomId } });
-            if (!room) {
-                socket.emit("join-denied", {
-                    reason: "Room not found. Check the room ID or ask for a new invite link.",
-                });
-                return;
-            }
-
-            if (kickedUsers.get(roomId)?.has(userId)) {
-                socket.emit("join-denied", {
-                    reason: "You were kicked from this room",
-                });
-                return;
-            }
-
-            let users = roomUsers.get(roomId)
-
-            if (!users) {
-                users = new Map();
-                roomUsers.set(roomId, users)
-            }
-            // Reconnect
-            if (users.has(userId)) {
-                const timer = disconnectTimers.get(userId);
-                if (timer) {
-                    clearTimeout(timer);
-                    disconnectTimers.delete(userId);
+        socket.on("join-room", async (payload: { roomId?: unknown }) => {
+            try {
+                const roomId = payload?.roomId;
+                if (typeof roomId !== "string" || !roomId.trim()) {
+                    socket.emit("join-denied", { reason: "A valid room ID is required." });
+                    return;
                 }
 
-                users.get(userId)!.socketId = socket.id;
-                socket.join(roomId);
+                const { userId, username } = socket.data.user as AuthUser;
+                const room = await prisma.room.findUnique({ where: { id: roomId } });
+                if (!room) {
+                    socket.emit("join-denied", {
+                        reason: "Room not found. Check the room ID or ask for a new invite link.",
+                    });
+                    return;
+                }
 
+                if (kickedUsers.get(roomId)?.has(userId)) {
+                    socket.emit("join-denied", {
+                        reason: "You were kicked from this room",
+                    });
+                    return;
+                }
+
+                const comments = await prisma.commentThread.findMany({
+                    where: { roomId },
+                    include: { replies: true },
+                    orderBy: { createdAt: "asc" },
+                });
+
+                let users = roomUsers.get(roomId);
+                if (!users) {
+                    users = new Map();
+                    roomUsers.set(roomId, users);
+                }
+
+                const isReconnect = users.has(userId);
+                if (isReconnect) {
+                    const timer = disconnectTimers.get(userId);
+                    if (timer) {
+                        clearTimeout(timer);
+                        disconnectTimers.delete(userId);
+                    }
+                }
+
+                users.set(userId, { userId, username, socketId: socket.id });
+                await socket.join(roomId);
                 socket.emit("room-joined", {
                     roomId,
                     code: room.code,
@@ -56,40 +68,19 @@ export function initSocket(io: Server) {
                     users: Array.from(users.values()),
                     hostUserId: room.hostUserId,
                 });
+                socket.emit("comment:init", { comments });
+
+                if (!isReconnect) {
+                    socket.to(roomId).emit("user-joined", { userId, username });
+                }
+
+                console.log(`Socket ${socket.id} joined room ${roomId}`);
+            } catch (error) {
+                console.error("Room join failed", error);
+                socket.emit("join-denied", {
+                    reason: "Unable to join the room right now. Please try again.",
+                });
             }
-
-            users.set(userId, {
-                userId,
-                username,
-                socketId: socket.id,
-            });
-
-            socket.join(roomId);
-
-            socket.emit("room-joined", {
-                roomId,
-                code: room.code,
-                language: room.language,
-                users: Array.from(users.values()),
-                hostUserId: room.hostUserId,
-            });
-
-            socket.to(roomId).emit("user-joined", {
-                userId,
-                username,
-            });
-
-
-            const comments = await prisma.commentThread.findMany({
-                where: { roomId },
-                include: { replies: true },
-                orderBy: { createdAt: "asc" },
-            });
-            socket.emit("comment:init", {
-                comments
-            });
-
-            console.log(`Socket ${socket.id} joined room ${roomId}`);
         });
 
         socket.on("code-change", async ({ roomId, code }: { roomId: string, code: string }) => {

@@ -1,25 +1,23 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import socket from "../socket/socket";
 import type { User } from "../types/user.ts"
 
 export function useRoom({ roomId }: { roomId: string }) {
+  const navigate = useNavigate();
   const userId = localStorage.getItem("userId") ?? "";
   const [users, setUsers] = useState<User[]>([])
   const [hostUserId, setHostUserId] = useState<string | null>(null);
   const isHost = hostUserId !== null && hostUserId === userId;
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const hydratedRef = useRef(false);
-  // const hasJoinedRef = useRef(false);
+  const joinedSocketIdRef = useRef<string | null>(null);
 
 
   useEffect(() => {
     if (!roomId) return;
-
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    socket.emit("join-room", { roomId });
 
     const handleRoomJoined = (data: {
       users: User[];
@@ -27,9 +25,35 @@ export function useRoom({ roomId }: { roomId: string }) {
     }) => {
       setUsers(data.users ?? []);
       setHostUserId(data.hostUserId ?? null);
+      setHasJoinedRoom(true);
+      setRoomError(null);
       if (!hydratedRef.current) {
         hydratedRef.current = true;
-        setIsPageLoading(false)
+        setIsPageLoading(false);
+      }
+    };
+
+    const joinRoom = () => {
+      if (!socket.id) return;
+      const joinKey = `${socket.id}:${roomId}`;
+      if (joinedSocketIdRef.current === joinKey) return;
+      joinedSocketIdRef.current = joinKey;
+      socket.emit("join-room", { roomId });
+    };
+
+    const handleConnect = () => {
+      setRoomError(null);
+      joinRoom();
+    };
+
+    const handleConnectError = (error: Error) => {
+      setRoomError(`Unable to connect to the collaboration server: ${error.message}`);
+      setIsPageLoading(false);
+    };
+
+    const handleDisconnect = (reason: string) => {
+      if (reason !== "io client disconnect") {
+        setRoomError("Connection lost. Reconnecting to the room...");
       }
     };
 
@@ -60,31 +84,58 @@ export function useRoom({ roomId }: { roomId: string }) {
 
     const handleRoomDeleted=()=>{
       alert("Room was deleted by host");
-      window.location.href="/"
+      navigate("/", { replace: true });
     }
 
+    const handleJoinDenied = ({ reason }: { reason: string }) => {
+      joinedSocketIdRef.current = null;
+      setRoomError(reason);
+      setIsPageLoading(false);
+    };
 
+    socket.auth = { token: localStorage.getItem("token") };
+    socket.on("connect", handleConnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("disconnect", handleDisconnect);
     socket.on("kicked", handleKicked)
     socket.on("room-joined", handleRoomJoined);
     socket.on("user-joined", handleUserJoined);
     socket.on("user-left", handleUserLeft);
     socket.on("host-changed", handleHostChanged);
     socket.on("room:deleted", handleRoomDeleted)
+    socket.on("join-denied", handleJoinDenied);
 
-    socket.on("join-denied", ({ reason }) => {
-      alert(reason);
-      window.location.href = "/";
-    });
+    if (socket.connected) {
+      handleConnect();
+    } else {
+      socket.connect();
+    }
 
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("kicked", handleKicked);
       socket.off("room-joined", handleRoomJoined);
       socket.off("user-joined", handleUserJoined);
       socket.off("user-left", handleUserLeft);
       socket.off("host-changed", handleHostChanged);
-      socket.off("kicked", handleKicked);
+      socket.off("room:deleted", handleRoomDeleted);
+      socket.off("join-denied", handleJoinDenied);
     };
-  }, [roomId]);
+  }, [navigate, roomId]);
 
+  const retryRoomJoin = () => {
+    setRoomError(null);
+    setIsPageLoading(true);
+    joinedSocketIdRef.current = null;
+    if (socket.connected) {
+      joinedSocketIdRef.current = `${socket.id}:${roomId}`;
+      socket.emit("join-room", { roomId });
+    } else {
+      socket.connect();
+    }
+  };
 
   const leaveRoom = () => {
     socket.emit("leave-room", { roomId });
@@ -122,6 +173,9 @@ export function useRoom({ roomId }: { roomId: string }) {
     kickUser,
     transferHost,
     isPageLoading,
+    roomError,
+    hasJoinedRoom,
+    retryRoomJoin,
     deleteRoom,
   };
 
